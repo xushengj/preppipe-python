@@ -10,6 +10,10 @@ import importlib
 import importlib.util
 import traceback
 
+import xdsl.ir
+import xdsl.irdl
+import xdsl.utils.parse_pipeline
+
 from .irbase import *
 from .util.audit import *
 from .util.message import MessageHandler
@@ -46,7 +50,7 @@ class TransformBase:
     pass
 
   _ctx : Context
-  _inputs : typing.List[Operation | str]
+  _inputs : typing.List[Operation | xdsl.ir.Operation | str]
   _output : str
 
   def __init__(self, ctx : Context) -> None:
@@ -56,7 +60,7 @@ class TransformBase:
     self._inputs = []
     self._output = ''
 
-  def set_input(self, inputs: typing.List[Operation | str]) -> None:
+  def set_input(self, inputs: typing.List[Operation | xdsl.ir.Operation | str]) -> None:
     # 设置输入（不管是 IR 还是文件路径）
     # inputs: （不管是IR还是其他文件、路径参数的）输入，即使是单个也是一个 list
     # 该函数一定会在 run() 之前被调用一次，但是与 set_output_path() 的调用没有必然的先后
@@ -68,7 +72,7 @@ class TransformBase:
     # 如果该函数被调用，则一定在 run() 之前被调用，并且最多调用一次
     self._output = output
 
-  def run(self) -> Operation | typing.List[Operation] | None:
+  def run(self) -> Operation | xdsl.ir.Operation | typing.List[Operation | xdsl.ir.Operation] | None:
     # 执行该转换
     # 如果该转换输出IR，则返回值应该是该IR的顶层操作项
     # 如果该转换不输出IR，则不返回任何值，实现应该在 run() 返回前完成输出
@@ -219,8 +223,8 @@ class TransformRegistration:
   class TransformInfo:
     definition : type[TransformBase]
     flag : str
-    input_decl : type[Operation] | IODecl
-    output_decl : type[Operation] | IODecl
+    input_decl : type[Operation | xdsl.ir.Operation] | IODecl
+    output_decl : type[Operation | xdsl.ir.Operation] | IODecl
     arg_title : str | None
     arg_desc : str | None
 
@@ -392,11 +396,11 @@ class TransformRegistration:
       if isinstance(input_decl, type):
         if current_ir_type is None:
           current_ir_type = input_decl
-        elif current_ir_type == Operation and input_decl != Operation and issubclass(input_decl, Operation):
+        elif current_ir_type in (Operation, xdsl.ir.Operation) and input_decl not in (Operation, xdsl.ir.Operation) and not issubclass(input_decl, (Operation, xdsl.ir.Operation)):
           # 类型细化
           current_ir_type = input_decl
         # 如果类型是 Operation 的话就是什么 IR 都能输入，不进行检查
-        elif input_decl != Operation and current_ir_type != Operation and input_decl != current_ir_type:
+        elif input_decl not in (Operation, xdsl.ir.Operation) and current_ir_type not in (Operation, xdsl.ir.Operation) and input_decl != current_ir_type:
           # 找到错误，报错
           raise RuntimeError(TransformRegistration._tr_pipeline_stage.format(index=str(pipeline_index), flag=flag)
                             +TransformRegistration._tr_pipeline_mismatched_input_type.format(curtype=current_ir_type.__name__, inputtype=input_decl.__name__))
@@ -420,11 +424,11 @@ class TransformRegistration:
         # 输出 IR
         # 先检查例外情况，如果输入是非IR，那么我们同样要求该类型与当前IR类型匹配
         if isinstance(input_decl, IODecl):
-          if output_decl != Operation and current_ir_type is not None and current_ir_type != Operation and output_decl != current_ir_type:
+          if output_decl not in (Operation, xdsl.ir.Operation) and current_ir_type is not None and current_ir_type not in (Operation, xdsl.ir.Operation) and output_decl != current_ir_type:
             raise RuntimeError(TransformRegistration._tr_pipeline_stage.format(index=str(pipeline_index), flag=flag)
                               +TransformRegistration._tr_pipeline_mismatched_output_type.format(curtype=current_ir_type.__name__, outputtype=output_decl.__name__))
         # 更新当前 IR 类型
-        if current_ir_type is None or current_ir_type == Operation or (output_decl is not Operation and issubclass(output_decl, Operation)):
+        if current_ir_type is None or current_ir_type in (Operation, xdsl.ir.Operation) or (output_decl not in (Operation, xdsl.ir.Operation) and issubclass(output_decl, (Operation, xdsl.ir.Operation))):
           current_ir_type = output_decl
       elif isinstance(output_decl, IODecl):
         # 输出非 IR
@@ -548,7 +552,10 @@ class _DebugDump(TransformBase):
 class _ViewIR(TransformBase):
   def run(self) -> None:
     for op in self.inputs:
-      op.view()
+      if isinstance(op, Operation):
+        op.view()
+      else:
+        print(str(op))
 
 @BackendDecl('test-copy-dump', input_decl=Operation, output_decl=IODecl('<No output>', nargs=0))
 class _TestCopyDumpIR(TransformBase):
