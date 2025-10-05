@@ -88,3 +88,14 @@ class IMAssetOp(xdsl.irdl.IRDLOperation):
 
   def __init__(self, value : xdsl.irdl.TypedAttribute) -> None:
     super().__init__(operands=[value], properties={})
+
+@xdsl.irdl.irdl_op_definition
+class IMDocumentOp(xdsl.irdl.IRDLOperation):
+  name = "im.document"
+  filename = xdsl.irdl.prop_def(xdsl.dialects.builtin.StringAttr)
+  body = xdsl.irdl.region_def()
+  assembly_format = "attr-dict $filename"
+
+  def __init__(self, filename : str | xdsl.dialects.builtin.StringAttr, loc : xdsl.dialects.builtin.UnknownLoc | xdsl.dialects.builtin.FileLineColLoc) -> None:
+    filename_attr = xdsl.dialects.builtin.StringAttr(filename) if isinstance(filename, str) else filename
+    super().__init__(properties={"filename": filename_attr}, loc=loc)

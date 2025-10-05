@@ -22,6 +22,7 @@ from .language import TranslationDomain, Translatable
 from .exceptions import *
 from .tooldecl import _registered_tools
 from .assets.assetmanager import AssetManager
+from .xdslutil.context import ContextWrapper
 
 # 这里提供一个类似 clang cc1 的界面，我们在这里支持详细的命令行设定
 # driver 以后就提供一个更简单易用的界面
@@ -49,11 +50,11 @@ class TransformBase:
     # 只会在注册时提供了 arg_title 的情况下调用
     pass
 
-  _ctx : Context
+  _ctx : ContextWrapper
   _inputs : typing.List[Operation | xdsl.ir.Operation | str]
   _output : str
 
-  def __init__(self, ctx : Context) -> None:
+  def __init__(self, ctx : ContextWrapper) -> None:
     # 此基类不会使用这些参数，子类在创建时应使用这样的参数列表
     # ctx: 所有 IR 共用的 Context
     self._ctx = ctx
@@ -244,7 +245,7 @@ class TransformRegistration:
     # 因此我们现在只区分中端转换的顺序，前后端的按字母顺序进行（还是要有个固定的顺序，方便复现问题）
   @dataclasses.dataclass
   class Pipeline:
-    ctx : Context
+    ctx : ContextWrapper
     frontends : typing.List[TransformBase] # 所有的（初始化好的）前端
     middleends : typing.List[TransformBase] # 所有的中端
     backends : typing.List[TransformBase] # 所有的后端
@@ -363,7 +364,7 @@ class TransformRegistration:
   )
 
   @staticmethod
-  def build_pipeline(parsed_args : argparse.Namespace, ctx : Context) -> typing.List[TransformBase]:
+  def build_pipeline(parsed_args : argparse.Namespace, ctx : ContextWrapper) -> typing.List[TransformBase]:
     # 找到所有被调用的转换，将它们的命令行参数解析好，然后组成最终的管线
     # 如果一个转换也没有就返回 None
     # 如果其中有什么问题，则我们抛出异常
@@ -726,7 +727,7 @@ class _PipelineManager:
       _print_version_info()
       is_action_performed = True
 
-    ctx = Context()
+    ctx = ContextWrapper()
     if result_args.searchpath:
       for path in result_args.searchpath:
         ctx.get_file_auditor().add_permissible_path(path)
