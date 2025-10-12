@@ -6,6 +6,7 @@ import os
 from ..pipeline import *
 from ..irbase import *
 from ..inputmodel import *
+from ..util.diagnostic_html import generate_report
 
 # pylint: disable=pointless-string-statement
 '''
@@ -120,7 +121,7 @@ def _export_inputs(inputs : list[IMDocumentOp], assetdir : str, jsonpath : str):
           format_dict["color"]=str(value)
         # case TextAttribute.BackgroundColor:
         #   format_dict["backgroundcolor"]=str(value)
-    
+
     text_item = {"type": "text", "content": v.content.value}
     if format_dict:
       text_item["format"] = format_dict
@@ -138,14 +139,14 @@ def _export_inputs(inputs : list[IMDocumentOp], assetdir : str, jsonpath : str):
           if isinstance(v, StringLiteral):
             content_list.append(v.get_string())
         content_str = "\n".join(content_list)
-        
+
         if reason == IMSpecialBlockOp.ATTR_REASON_CENTERED:
           return [{"type": "centered", "content": content_str}]
         elif reason == IMSpecialBlockOp.ATTR_REASON_BG_HIGHLIGHT:
           return [{"type": "codeblock", "content": content_str}]
         else:
           raise NotImplementedError(f"Unsupported special block reason: {reason}")
-      
+
       elif isinstance(op, IMListOp):
         items = []
         for i in range(op.get_num_items()):
@@ -155,10 +156,10 @@ def _export_inputs(inputs : list[IMDocumentOp], assetdir : str, jsonpath : str):
             body_scope.append(process_block(sub_block, parentpath))
           items.append(body_scope)
         return [{"type": "list", "items": items}]
-      
+
       elif isinstance(op, IMTableOp):
         raise NotImplementedError("Table export not implemented")
-    
+
     # 处理普通文本块
     paragraph = []
     for op in block_ops:
@@ -181,14 +182,14 @@ def _export_inputs(inputs : list[IMDocumentOp], assetdir : str, jsonpath : str):
     parentpath = doc.location.get_file_path()
     for block in doc.body.blocks:
       doc_body.append(process_block(block, parentpath))
-    
+
     doc_entry = {
       "name": doc.name,
       "path": parentpath,
       "body": doc_body
     }
     json_files.append(doc_entry)
-  
+
   json_result = {
     "files": json_files,
     "embedded": json_embedded
@@ -202,10 +203,12 @@ def _export_inputs(inputs : list[IMDocumentOp], assetdir : str, jsonpath : str):
 @BackendDecl('input-export', input_decl=IMDocumentOp, output_decl=IODecl(description='<json path>', nargs=1))
 class _InputExport(TransformBase):
   _asset_dir : typing.ClassVar[str] = ""
+  _htmlreport_path : typing.ClassVar[str] = ""
 
   @staticmethod
   def install_arguments(argument_group : argparse._ArgumentGroup):
     argument_group.add_argument("--input-export-assetdir", nargs=1, type=str, default='')
+    argument_group.add_argument("--input-export-htmlreport", nargs=1, type=str, default='')
 
   @staticmethod
   def handle_arguments(args : argparse.Namespace): # pylint: disable=protected-access
@@ -220,8 +223,16 @@ class _InputExport(TransformBase):
       else:
         os.makedirs(_InputExport._asset_dir)
 
+    _InputExport._htmlreport_path = args.input_export_htmlreport
+    if isinstance(_InputExport._htmlreport_path, list):
+      assert len(_InputExport._htmlreport_path) == 1
+      _InputExport._htmlreport_path = _InputExport._htmlreport_path[0]
+    assert isinstance(_InputExport._htmlreport_path, str)
+
   def run(self) -> None:
     assetdir = _InputExport._asset_dir
     if len(assetdir) == 0:
       assetdir = os.path.dirname(self.output)
     _export_inputs(self.inputs, assetdir, self.output) # type: ignore
+    if len(_InputExport._htmlreport_path) > 0:
+      generate_report(content_json_path=self.output, diagnostic_json_path=None, output_path=_InputExport._htmlreport_path)
